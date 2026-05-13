@@ -1,0 +1,35 @@
+agent_name: sentinel-test-agent
+a2a_endpoint: https://a2a.example.com
+
+capabilities:
+  tools:
+    - code_generation
+    - testing
+    - review
+    - dual_model_validation
+
+registry:
+  discovery_endpoint: "https://a2a.example.com/registry"
+  heartbeat_interval: 60
+  stale_threshold: 120
+
+transport:
+  type: http
+  http:
+    poll_timeout: 30
+    max_retries: 3
+    retry_backoff: 0.5
+  redis:
+    channel_prefix: "a2a:"
+
+security:
+  require_signing: true
+  require_api_key: true
+
+logging:
+  level: INFO
+  format: json
+
+agent_logic:
+  path: .a2a/agent_logic.py
+  enabled: true
