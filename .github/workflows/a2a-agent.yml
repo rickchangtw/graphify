@@ -1,75 +1,54 @@
-# A2A Agent GitHub Action
-# This workflow enables the repository to participate in A2A agent network communication.
-#
-# Required secrets:
-#   A2A_ENDPOINT: URL of the A2A server (e.g., https://a2a.example.com)
-#   A2A_AGENT_ID: Unique identifier for this agent
-#   A2A_API_KEY: API key for A2A server authentication
-#
-# Optional:
-#   A2A_SIGNING_KEY: Private key for message signing (if enabled)
-
 name: A2A Agent
-
 on:
   repository_dispatch:
     types: [a2a-message]
-
   schedule:
     - cron: '*/5 * * * *'
-
   workflow_dispatch:
     inputs:
       test_message:
         description: 'Send a test A2A message'
         required: false
         type: boolean
-
-env:
-  A2A_ENDPOINT: ${{ secrets.A2A_ENDPOINT }}
-  A2A_AGENT_ID: ${{ secrets.A2A_AGENT_ID }}
-  A2A_API_KEY: ${{ secrets.A2A_API_KEY }}
-
 jobs:
   a2a-agent:
     runs-on: ubuntu-latest
     name: A2A Agent Handler
-
+    env:
+      A2A_ENDPOINT: ${{ secrets.A2A_ENDPOINT }}
+      A2A_AGENT_ID: ${{ secrets.A2A_AGENT_ID }}
+      A2A_API_KEY: ${{ secrets.A2A_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Install dependencies
-        run: |
-          pip install a2a-sdk httpx pyjwt cryptography
-
+        run: pip install httpx pyjwt cryptography
       - name: Handle A2A Message
         if: github.event_name == 'repository_dispatch'
         run: |
-          python -c "
+          python << 'PYEOF'
           import os
           import json
           import httpx
           from datetime import datetime
-
-          payload = json.loads('${{ github.event.payload }}'.replace(\"'\", \"'\\'\")) if '${{ github.event.payload }}' else {}
-
+          endpoint = os.environ.get('A2A_ENDPOINT', '')
+          agent_id = os.environ.get('A2A_AGENT_ID', 'unknown')
+          api_key = os.environ.get('A2A_API_KEY', '')
+          event_payload = '''${{ github.event.payload }}'''
+          payload = json.loads(event_payload) if event_payload and event_payload.strip() else {}
           message = payload.get('message', {})
           message_type = message.get('message_type', '')
           sender_id = message.get('sender_id', 'unknown')
           correlation_id = message.get('correlation_id', '')
-
           print(f'Received {message_type} from {sender_id}, correlation_id={correlation_id}')
-
           if message_type == 'TASK_REQUEST':
               result = os.popen('python agent_logic.py').read()
               response = {
-                  'sender_id': os.environ['A2A_AGENT_ID'],
+                  'sender_id': agent_id,
                   'receiver_id': sender_id,
                   'message_type': 'TASK_RESPONSE',
                   'payload': {'result': result},
@@ -78,7 +57,7 @@ jobs:
               }
           elif message_type == 'HEARTBEAT':
               response = {
-                  'sender_id': os.environ['A2A_AGENT_ID'],
+                  'sender_id': agent_id,
                   'receiver_id': sender_id,
                   'message_type': 'TASK_RESPONSE',
                   'payload': {
@@ -90,9 +69,9 @@ jobs:
                   'timestamp': datetime.utcnow().isoformat(),
               }
           elif message_type == 'VALIDATION_SHARE':
-              print(f'Validation share: {message.get(\"payload\", {})}')
+              print(f'Validation share: {message.get("payload", {})}')
               response = {
-                  'sender_id': os.environ['A2A_AGENT_ID'],
+                  'sender_id': agent_id,
                   'receiver_id': sender_id,
                   'message_type': 'TASK_RESPONSE',
                   'payload': {'received': True},
@@ -102,79 +81,45 @@ jobs:
           else:
               print(f'Unhandled message type: {message_type}')
               response = None
-
           if response and message.get('receiver_id'):
               with httpx.Client() as client:
                   resp = client.post(
-                      f\"{os.environ['A2A_ENDPOINT']}/a2a/messages\",
+                      f"{endpoint}/a2a/messages",
                       json=response,
-                      headers={'Authorization': f\"Bearer {os.environ['A2A_API_KEY']}\"},
+                      headers={'Authorization': f"Bearer {api_key}"},
                       timeout=10.0,
                   )
                   print(f'Response sent: {resp.status_code}')
-          "
-
+          PYEOF
       - name: Send Heartbeat
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
-          python -c "
+          python << 'PYEOF'
           import os
-          import json
           import httpx
           from datetime import datetime
-
+          endpoint = os.environ.get('A2A_ENDPOINT', '')
+          agent_id = os.environ.get('A2A_AGENT_ID', 'unknown')
+          api_key = os.environ.get('A2A_API_KEY', '')
           heartbeat = {
-              'sender_id': os.environ['A2A_AGENT_ID'],
+              'sender_id': agent_id,
               'receiver_id': None,
               'message_type': 'HEARTBEAT',
               'payload': {
                   'status': 'READY',
                   'load': 0.3,
                   'tools': ['code_generation', 'testing', 'review'],
-                  'repository': '${{ github.repository }}',
+                  'repository': '''${{ github.repository }}''',
               },
-              'correlation_id': '${{ github.run_id }}',
+              'correlation_id': '''${{ github.run_id }}''',
               'timestamp': datetime.utcnow().isoformat(),
           }
-
           with httpx.Client() as client:
               resp = client.post(
-                  f\"{os.environ['A2A_ENDPOINT']}/a2a/channels/broadcast\",
+                  f"{endpoint}/a2a/channels/broadcast",
                   json=heartbeat,
-                  headers={'Authorization': f\"Bearer {os.environ['A2A_API_KEY']}\"},
+                  headers={'Authorization': f"Bearer {api_key}"},
                   timeout=10.0,
               )
               print(f'Heartbeat sent: {resp.status_code}')
-          "
-
-      - name: Health Check Endpoint
-        if: github.event_name == 'workflow_dispatch' && inputs.test_message
-        run: |
-          python -c "
-          import os
-          import httpx
-          from datetime import datetime
-
-          health = {
-              'sender_id': os.environ['A2A_AGENT_ID'],
-              'receiver_id': None,
-              'message_type': 'HEARTBEAT',
-              'payload': {
-                  'type': 'health_check',
-                  'repository': '${{ github.repository }}',
-                  'workflow_run_id': '${{ github.run_id }}',
-              },
-              'correlation_id': 'health-check-${{ github.run_id }}',
-              'timestamp': datetime.utcnow().isoformat(),
-          }
-
-          with httpx.Client() as client:
-              resp = client.post(
-                  f\"{os.environ['A2A_ENDPOINT']}/a2a/channels/broadcast\",
-                  json=health,
-                  headers={'Authorization': f\"Bearer {os.environ['A2A_API_KEY']}\"},
-                  timeout=10.0,
-              )
-              print(f'Health check sent: {resp.status_code}')
-              print(resp.text)
-          "
+          PYEOF
