@@ -114,7 +114,7 @@ jobs:
                   try:
                       with httpx.Client() as client:
                           resp = client.get(
-                              f"{endpoint}/a2a/messages/by-correlation/{corr_id}",
+                              f"{endpoint}/a2a/messages/by-correlation/{corr_id}?consume=false",
                               headers=auth_headers,
                               timeout=5.0,
                           )
