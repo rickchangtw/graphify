@@ -150,7 +150,8 @@ def handle_deps(_) -> dict:
                     deps.append(stripped)
                 if stripped.startswith("["):
                     break
-        return {"dependencies": deps, "file": "pyproject.toml"}
+        deps = [d.strip("\"[]") for d in deps]
+        return {"dependency_count": len(deps), "dependencies": deps, "file": "pyproject.toml"}
     elif os.path.exists("requirements.txt"):
         with open("requirements.txt") as f:
             lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
