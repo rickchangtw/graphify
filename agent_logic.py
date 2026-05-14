@@ -183,13 +183,16 @@ def handle_refactor(payload: dict) -> dict:
         ("vulture", ["pip", "install", "vulture", "-q"], ["python", "-m", "vulture", path, "--min-confidence", "80"]),
     ]:
         if not tools_installed:
-            run(install_cmd, timeout=30)
+            install_result = run(install_cmd, timeout=60)
             tools_installed = True
-        result = run(check_cmd, timeout=60)
-        if result["exit_code"] == 0 and result["stdout"]:
-            findings.append({"tool": tool, "output": result["stdout"][:3000]})
-        elif result["stderr"]:
-            findings.append({"tool": tool, "output": result["stderr"][:1000]})
+            if install_result["exit_code"] != 0:
+                findings.append({"tool": tool, "error": f"Install failed: {install_result['stderr'][:200]}"})
+                continue
+        check_result = run(check_cmd, timeout=60)
+        if check_result["exit_code"] == 0 and check_result["stdout"]:
+            findings.append({"tool": tool, "output": check_result["stdout"][:3000]})
+        elif check_result["stderr"]:
+            findings.append({"tool": tool, "output": check_result["stderr"][:1000]})
     return {"path": path, "total_findings": ruff_findings, "checks": findings}
 
 
