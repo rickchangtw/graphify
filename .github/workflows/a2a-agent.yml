@@ -35,6 +35,7 @@ jobs:
           import json
           import httpx
           from datetime import datetime
+          print(f"DEBUG A2A_ENDPOINT='{os.environ.get('A2A_ENDPOINT', 'NOT_SET')}'")
           endpoint = os.environ.get('A2A_ENDPOINT', '')
           agent_id = os.environ.get('A2A_AGENT_ID', 'unknown')
           api_key = os.environ.get('A2A_API_KEY', '')
