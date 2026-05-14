@@ -176,16 +176,20 @@ def handle_refactor(payload: dict) -> dict:
     ruff_findings = len(r["stdout"].splitlines()) if r["stdout"] else 0
     if r["stdout"]:
         findings.append({"tool": "ruff", "issues": ruff_findings, "details": r["stdout"][:3000]})
-    complexity = run(["python", "-m", "lizard", "--languages", "python", "--exclude", ".venv", path], timeout=60)
-    if complexity["exit_code"] == 0 and complexity["stdout"]:
-        findings.append({"tool": "lizard_complexity", "output": complexity["stdout"][:3000]})
-    else:
-        findings.append({"tool": "lizard_complexity", "error": "lizard not installed, install with: pip install lizard"})
-    unused = run(["python", "-m", "vulture", path, "--min-confidence", "80"], timeout=60)
-    if unused["exit_code"] == 0 and unused["stdout"]:
-        findings.append({"tool": "vulture_unused_code", "output": unused["stdout"][:3000]})
-    else:
-        findings.append({"tool": "vulture_unused_code", "error": "vulture not installed, install with: pip install vulture"})
+    # Install and run analysis tools on demand
+    tools_installed = False
+    for tool, install_cmd, check_cmd in [
+        ("lizard", ["pip", "install", "lizard", "-q"], ["python", "-m", "lizard", "--languages", "python", "--exclude", ".venv", path]),
+        ("vulture", ["pip", "install", "vulture", "-q"], ["python", "-m", "vulture", path, "--min-confidence", "80"]),
+    ]:
+        if not tools_installed:
+            run(install_cmd, timeout=30)
+            tools_installed = True
+        result = run(check_cmd, timeout=60)
+        if result["exit_code"] == 0 and result["stdout"]:
+            findings.append({"tool": tool, "output": result["stdout"][:3000]})
+        elif result["stderr"]:
+            findings.append({"tool": tool, "output": result["stderr"][:1000]})
     return {"path": path, "total_findings": ruff_findings, "checks": findings}
 
 
