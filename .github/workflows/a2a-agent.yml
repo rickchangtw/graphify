@@ -69,14 +69,15 @@ jobs:
               print(f'Unsupported message type: {message_type}')
               exit(0)
 
-          task = task_payload.get('task', '')
-          print(f'Processing task: {task}')
+          task_name = task_payload.get('task', '')
+          print(f'Processing task: {task_name}')
 
           import subprocess
+          task_input = json.dumps(task_payload)
           try:
               proc = subprocess.run(
-                  ['python', 'agent_logic.py', task],
-                  capture_output=True, text=True, timeout=60
+                  ['python', 'agent_logic.py', task_input],
+                  capture_output=True, text=True, timeout=180
               )
               result_output = proc.stdout or proc.stderr or "No output"
           except Exception as e:
@@ -87,7 +88,7 @@ jobs:
               'receiver_id': sender_id,
               'message_type': 'TASK_RESPONSE',
               'payload': {
-                  'original_task': task,
+                  'original_task': task_name,
                   'result': result_output,
                   'status': 'completed'
               },
