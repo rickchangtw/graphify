@@ -27,8 +27,8 @@ jobs:
       A2A_AGENT_ID: ${{ secrets.A2A_AGENT_ID }}
       A2A_API_KEY: ${{ secrets.A2A_API_KEY }}
       A2A_CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.PAT_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
 
     steps:
       - name: Checkout
