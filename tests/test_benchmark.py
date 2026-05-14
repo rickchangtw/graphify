@@ -1,11 +1,10 @@
 """Tests for graphify/benchmark.py."""
 from __future__ import annotations
 import json
-import pytest
 import networkx as nx
 from networkx.readwrite import json_graph
 
-from graphify.benchmark import run_benchmark, print_benchmark, _query_subgraph_tokens, _SAMPLE_QUESTIONS, _safe, _hr
+from graphify.benchmark import run_benchmark, print_benchmark, _query_subgraph_tokens, _safe, _hr
 
 
 def _make_graph() -> nx.Graph:
@@ -125,7 +124,8 @@ def test_print_benchmark_error_message(capsys):
 # stdout cannot encode the glyph.
 
 def test_safe_returns_unicode_when_encodable():
-    import io, sys
+    import io
+    import sys
     real_stdout = sys.stdout
     try:
         sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
@@ -135,7 +135,8 @@ def test_safe_returns_unicode_when_encodable():
         sys.stdout = real_stdout
 
 def test_safe_falls_back_when_unencodable():
-    import io, sys
+    import io
+    import sys
     real_stdout = sys.stdout
     try:
         sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
@@ -146,7 +147,8 @@ def test_safe_falls_back_when_unencodable():
 
 def test_print_benchmark_survives_cp1252_stdout(tmp_path, monkeypatch, capsys):
     """Regression: U+2500 / U+2192 used to crash with UnicodeEncodeError on cp1252."""
-    import io, sys
+    import io
+    import sys
     G = _make_graph()
     graph_file = tmp_path / "graph.json"
     _write_graph(G, graph_file)

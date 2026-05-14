@@ -1,6 +1,4 @@
 """Tests for watch.py - file watcher helpers (no watchdog required)."""
-import time
-from pathlib import Path
 import pytest
 
 from graphify.watch import _notify_only, _WATCHED_EXTENSIONS

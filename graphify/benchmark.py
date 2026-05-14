@@ -139,14 +139,14 @@ def print_benchmark(result: dict) -> None:
         print(f"Benchmark error: {result['error']}")
         return
 
-    print(f"\ngraphify token reduction benchmark")
+    print("\ngraphify token reduction benchmark")
     print(_hr(50))
     arrow = _safe("→", "->")
     print(f"  Corpus:          {result['corpus_words']:,} words {arrow} ~{result['corpus_tokens']:,} tokens (naive)")
     print(f"  Graph:           {result['nodes']:,} nodes, {result['edges']:,} edges")
     print(f"  Avg query cost:  ~{result['avg_query_tokens']:,} tokens")
     print(f"  Reduction:       {result['reduction_ratio']}x fewer tokens per query")
-    print(f"\n  Per question:")
+    print("\n  Per question:")
     for p in result["per_question"]:
         print(f"    [{p['reduction']}x] {p['question'][:55]}")
     print()

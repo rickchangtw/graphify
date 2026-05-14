@@ -1,7 +1,6 @@
 """Tests for rationale/docstring extraction in extract.py."""
 import textwrap
 from pathlib import Path
-import pytest
 from graphify.extract import extract_python
 
 

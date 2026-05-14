@@ -204,7 +204,7 @@ def install(platform: str = "claude") -> None:
         if claude_md.exists():
             content = claude_md.read_text(encoding="utf-8")
             if "graphify" in content:
-                print(f"  CLAUDE.md        ->  already registered (no change)")
+                print("  CLAUDE.md        ->  already registered (no change)")
             else:
                 claude_md.write_text(content.rstrip() + _SKILL_REGISTRATION, encoding="utf-8")
                 print(f"  CLAUDE.md        ->  skill registered in {claude_md}")
@@ -541,10 +541,10 @@ def _kiro_install(project_dir: Path) -> None:
     steering_dir.mkdir(parents=True, exist_ok=True)
     steering_dst = steering_dir / "graphify.md"
     if steering_dst.exists() and _KIRO_STEERING_MARKER in steering_dst.read_text(encoding="utf-8"):
-        print(f"  .kiro/steering/graphify.md  ->  already configured")
+        print("  .kiro/steering/graphify.md  ->  already configured")
     else:
         steering_dst.write_text(_KIRO_STEERING, encoding="utf-8")
-        print(f"  .kiro/steering/graphify.md  ->  always-on steering written")
+        print("  .kiro/steering/graphify.md  ->  always-on steering written")
 
     print()
     print("Kiro will now read the knowledge graph before every conversation.")
@@ -863,7 +863,7 @@ def _uninstall_codex_hook(project_dir: Path) -> None:
     filtered = [h for h in pre_tool if "graphify" not in str(h)]
     existing["hooks"]["PreToolUse"] = filtered
     hooks_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-    print(f"  .codex/hooks.json  ->  PreToolUse hook removed")
+    print("  .codex/hooks.json  ->  PreToolUse hook removed")
 
 
 def _agents_install(project_dir: Path, platform: str) -> None:
@@ -873,7 +873,7 @@ def _agents_install(project_dir: Path, platform: str) -> None:
     if target.exists():
         content = target.read_text(encoding="utf-8")
         if _AGENTS_MD_MARKER in content:
-            print(f"graphify already configured in AGENTS.md")
+            print("graphify already configured in AGENTS.md")
         else:
             target.write_text(content.rstrip() + "\n\n" + _AGENTS_MD_SECTION, encoding="utf-8")
             print(f"graphify section written to {target.resolve()}")
@@ -968,7 +968,7 @@ def _install_claude_hook(project_dir: Path) -> None:
     hooks["PreToolUse"] = [h for h in pre_tool if not (h.get("matcher") in ("Glob|Grep", "Bash") and "graphify" in str(h))]
     hooks["PreToolUse"].append(_SETTINGS_HOOK)
     settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    print(f"  .claude/settings.json  ->  PreToolUse hook registered")
+    print("  .claude/settings.json  ->  PreToolUse hook registered")
 
 
 def _uninstall_claude_hook(project_dir: Path) -> None:
@@ -986,7 +986,7 @@ def _uninstall_claude_hook(project_dir: Path) -> None:
         return
     settings["hooks"]["PreToolUse"] = filtered
     settings_path.write_text(json.dumps(settings, indent=2), encoding="utf-8")
-    print(f"  .claude/settings.json  ->  PreToolUse hook removed")
+    print("  .claude/settings.json  ->  PreToolUse hook removed")
 
 
 def uninstall_all(project_dir: Path | None = None, purge: bool = False) -> None:
@@ -1020,7 +1020,7 @@ def uninstall_all(project_dir: Path | None = None, purge: bool = False) -> None:
         out = pd / "graphify-out"
         if out.exists():
             _shutil.rmtree(out)
-            print(f"\n  graphify-out/  ->  deleted (--purge)")
+            print("\n  graphify-out/  ->  deleted (--purge)")
         else:
             print("\n  graphify-out/  ->  not found (nothing to purge)")
 
@@ -1241,7 +1241,7 @@ def main() -> None:
     # "install"/"uninstall" which have their own per-subcommand help handlers.
     _FREE_TEXT_CMDS = {"query", "explain", "path", "save-result", "install", "uninstall"}
     if cmd not in _FREE_TEXT_CMDS and any(a in {"-h", "--help", "-?"} for a in sys.argv[2:]):
-        print(f"Run 'graphify --help' for full usage.")
+        print("Run 'graphify --help' for full usage.")
         return
 
     if cmd == "install":
@@ -1410,7 +1410,6 @@ def main() -> None:
             print("Usage: graphify query \"<question>\" [--dfs] [--context C] [--budget N] [--graph path]", file=sys.stderr)
             sys.exit(1)
         from graphify.serve import _query_graph_text
-        from graphify.security import sanitize_label
         from networkx.readwrite import json_graph
         question = sys.argv[2]
         use_dfs = "--dfs" in sys.argv
@@ -1424,14 +1423,14 @@ def main() -> None:
                 try:
                     budget = int(args[i + 1])
                 except ValueError:
-                    print(f"error: --budget must be an integer", file=sys.stderr)
+                    print("error: --budget must be an integer", file=sys.stderr)
                     sys.exit(1)
                 i += 2
             elif args[i].startswith("--budget="):
                 try:
                     budget = int(args[i].split("=", 1)[1])
                 except ValueError:
-                    print(f"error: --budget must be an integer", file=sys.stderr)
+                    print("error: --budget must be an integer", file=sys.stderr)
                     sys.exit(1)
                 i += 1
             elif args[i] == "--context" and i + 1 < len(args):
@@ -1449,7 +1448,7 @@ def main() -> None:
             print(f"error: graph file not found: {gp}", file=sys.stderr)
             sys.exit(1)
         if not gp.suffix == ".json":
-            print(f"error: graph file must be a .json file", file=sys.stderr)
+            print("error: graph file must be a .json file", file=sys.stderr)
             sys.exit(1)
         try:
             import json as _json
@@ -2101,7 +2100,6 @@ def main() -> None:
             sys.exit(0)
 
         from networkx.readwrite import json_graph as _jg
-        from graphify.build import build_from_json as _bfj
 
         _raw = json.loads(graph_path.read_text(encoding="utf-8"))
         try:
@@ -2137,7 +2135,7 @@ def main() -> None:
                 _to_html(G, communities, str(out_dir / "graph.html"),
                          community_labels=labels or None, node_limit=node_limit)
                 if G.number_of_nodes() <= node_limit:
-                    print(f"graph.html written - open in any browser, no server needed")
+                    print("graph.html written - open in any browser, no server needed")
 
         elif subcmd == "obsidian":
             from graphify.export import to_obsidian as _to_obsidian, to_canvas as _to_canvas
@@ -2171,12 +2169,12 @@ def main() -> None:
             from graphify.export import to_svg as _to_svg
             _to_svg(G, communities, str(out_dir / "graph.svg"),
                     community_labels=labels or None)
-            print(f"graph.svg written - embeds in Obsidian, Notion, GitHub READMEs")
+            print("graph.svg written - embeds in Obsidian, Notion, GitHub READMEs")
 
         elif subcmd == "graphml":
             from graphify.export import to_graphml as _to_graphml
             _to_graphml(G, communities, str(out_dir / "graph.graphml"))
-            print(f"graph.graphml written - open in Gephi, yEd, or any GraphML tool")
+            print("graph.graphml written - open in Gephi, yEd, or any GraphML tool")
 
         elif subcmd == "neo4j":
             if neo4j_uri:
@@ -2635,7 +2633,6 @@ def main() -> None:
         # Build graph + cluster + score + write.
         from graphify.build import (
             build as _build,
-            build_from_json as _build_from_json,
             build_merge as _build_merge,
         )
         from graphify.cluster import cluster as _cluster, score_all as _score_all

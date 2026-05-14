@@ -1,7 +1,5 @@
 """Tests for graphify claude install / uninstall commands."""
-from pathlib import Path
-import pytest
-from graphify.__main__ import claude_install, claude_uninstall, _CLAUDE_MD_MARKER, _CLAUDE_MD_SECTION
+from graphify.__main__ import claude_install, claude_uninstall, _CLAUDE_MD_MARKER
 
 
 # ---------------------------------------------------------------------------

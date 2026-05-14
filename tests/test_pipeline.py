@@ -4,13 +4,11 @@ Uses the existing test fixtures (code + markdown). No LLM calls - AST extraction
 Catches regressions in how modules connect, not just individual module behaviour.
 """
 import json
-import tempfile
 from pathlib import Path
 
-import pytest
 
 from graphify.detect import detect
-from graphify.extract import collect_files, extract
+from graphify.extract import extract
 from graphify.build import build_from_json
 from graphify.cluster import cluster, score_all
 from graphify.analyze import god_nodes, surprising_connections, suggest_questions

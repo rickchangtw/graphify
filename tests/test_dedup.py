@@ -1,6 +1,5 @@
 """Tests for graphify/dedup.py entity deduplication pipeline."""
 from __future__ import annotations
-import pytest
 from graphify.dedup import deduplicate_entities, _entropy, _shingles
 
 

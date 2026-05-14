@@ -421,8 +421,8 @@ def watch(watch_path: Path, debounce: float = 3.0) -> None:
     observer.start()
 
     print(f"[graphify watch] Watching {watch_path.resolve()} - press Ctrl+C to stop")
-    print(f"[graphify watch] Code changes rebuild graph automatically. "
-          f"Doc/image changes require /graphify --update.")
+    print("[graphify watch] Code changes rebuild graph automatically. "
+          "Doc/image changes require /graphify --update.")
     print(f"[graphify watch] Debounce: {debounce}s")
 
     try:

@@ -10,7 +10,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 
 PYTHON = sys.executable
 FIXTURES = Path(__file__).parent / "fixtures"

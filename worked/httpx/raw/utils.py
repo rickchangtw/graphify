@@ -2,7 +2,6 @@
 Utility functions shared across the library.
 Small helpers that don't belong in any one module.
 """
-import re
 from models import Cookies
 
 

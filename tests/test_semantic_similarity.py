@@ -2,7 +2,7 @@
 import networkx as nx
 import pytest
 from graphify.build import build_from_json
-from graphify.analyze import surprising_connections, _surprise_score
+from graphify.analyze import _surprise_score
 from graphify.report import generate
 
 

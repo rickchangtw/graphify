@@ -1,9 +1,7 @@
 """Tests for graphify/security.py - URL validation, safe fetch, path guards, label sanitisation."""
 from __future__ import annotations
 
-import json
 import urllib.error
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,8 +12,6 @@ from graphify.security import (
     safe_fetch_text,
     validate_graph_path,
     validate_url,
-    _MAX_FETCH_BYTES,
-    _MAX_TEXT_BYTES,
 )
 
 

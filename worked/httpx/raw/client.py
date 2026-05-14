@@ -4,10 +4,8 @@ BaseClient holds all shared logic. Client and AsyncClient extend it for sync/asy
 This is the integration hub of the library - it imports from every other module.
 """
 from models import Request, Response, URL, Headers, Cookies
-from auth import Auth, BasicAuth
 from transport import BaseTransport, HTTPTransport, AsyncHTTPTransport
-from exceptions import TooManyRedirects, InvalidURL
-from utils import build_url_with_params, obfuscate_sensitive_headers
+from utils import build_url_with_params
 
 
 DEFAULT_MAX_REDIRECTS = 20

@@ -1,7 +1,6 @@
 """Tests for language extractors: Java, C, C++, Ruby, C#, Kotlin, Scala, PHP, Swift, Go, Julia, Fortran, JS/TS."""
 from __future__ import annotations
 from pathlib import Path
-import pytest
 from graphify.extract import (
     extract_java, extract_c, extract_cpp, extract_ruby,
     extract_csharp, extract_kotlin, extract_scala, extract_php,
@@ -771,7 +770,7 @@ def test_fortran_finds_calls():
 def test_fortran_case_insensitive_names():
     r = extract_fortran(FIXTURES / "sample.f90")
     labels = [n["label"] for n in r["nodes"]]
-    assert all(l == l.lower() or "(" in l for l in labels if l.endswith(("()", "")) and not "." in l)
+    assert all(l == l.lower() or "(" in l for l in labels if l.endswith(("()", "")) and "." not in l)
     assert "geometry" in labels
     assert "main" in labels
 

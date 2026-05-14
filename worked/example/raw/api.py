@@ -2,9 +2,9 @@
 API module - exposes the document pipeline over HTTP.
 Thin layer over parser, validator, processor, and storage.
 """
-from parser import batch_parse, parse_file
+from parser import batch_parse
 from validator import validate_document, ValidationError
-from processor import process_and_save, enrich_document
+from processor import process_and_save
 from storage import load_record, delete_record, list_records, load_index
 
 

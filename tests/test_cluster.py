@@ -1,5 +1,4 @@
 import json
-import sys
 import networkx as nx
 from pathlib import Path
 from graphify.build import build_from_json
