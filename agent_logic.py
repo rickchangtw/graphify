@@ -41,6 +41,21 @@ def _repo_slug() -> str:
     return os.environ.get("GITHUB_REPOSITORY", "rickchangtw/graphify")
 
 
+def _setup_git() -> dict:
+    """Configure git user and remote URL with token auth."""
+    run(["git", "config", "user.name", "A2A Agent"])
+    run(["git", "config", "user.email", "a2a@sentinel-arch.dev"])
+    token = _gh_token()
+    if token:
+        slug = _repo_slug()
+        run(["git", "remote", "set-url", "origin",
+             f"https://x-access-token:{token}@github.com/{slug}.git"], timeout=10)
+        r = run(["git", "config", "--get", "remote.origin.url"], timeout=5)
+        configured_url = r["stdout"] if r["exit_code"] == 0 else ""
+        return {"configured": bool(configured_url), "git_user_set": True}
+    return {"configured": False, "git_user_set": True}
+
+
 # ── Existing Handlers ──────────────────────────────────────────────────
 
 def handle_status(_) -> dict:
@@ -144,6 +159,7 @@ def handle_code_generation(payload: dict) -> dict:
             errors.append(f"Failed to write {fpath}: {e}")
     if errors:
         return {"partial": True, "errors": errors, "files_written": len(files) - len(errors)}
+    git_setup = _setup_git()
     r = run(["git", "checkout", "-b", branch_name])
     run(["git", "add", "-A"])
     r2 = run(["git", "commit", "-m", commit_message, "--allow-empty"])
@@ -209,6 +225,8 @@ def handle_auto_fix(payload: dict) -> dict:
     remaining = r["stdout"].strip()
     diff = run(["git", "diff", "--stat"])
     has_changes = bool(diff.get("stdout"))
+    if has_changes:
+        _setup_git()
     result = {
         "fix_applied": r["exit_code"] == 0,
         "ruff_exit_code": r["exit_code"],
