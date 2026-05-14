@@ -90,6 +90,7 @@ def handle_code_review(payload: dict) -> dict:
 
 def handle_run_tests(payload: dict) -> dict:
     module = payload.get("module", "tests/")
+    run(["pip", "install", "pytest", "-q"], timeout=30)
     r = run(["python", "-m", "pytest", "-v", "--tb=short", "-x", module], timeout=180)
     passed = r["stdout"].count("PASSED")
     failed = r["stdout"].count("FAILED")
@@ -227,6 +228,7 @@ def handle_auto_fix(payload: dict) -> dict:
     token = _gh_token()
     if not token:
         return {"error": "GITHUB_TOKEN not available"}
+    run(["pip", "install", "ruff", "-q"], timeout=30)
     r = run(["python", "-m", "ruff", "check", "--fix", "--quiet", path], timeout=60)
     fixed = r["exit_code"] == 0
     remaining = r["stdout"].strip()
