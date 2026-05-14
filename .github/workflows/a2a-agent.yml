@@ -49,7 +49,7 @@ jobs:
           agent_id = os.environ.get('A2A_AGENT_ID', 'unknown')
           api_key = os.environ.get('A2A_API_KEY', '')
 
-          event_payload = '''${{ github.event.payload }}'''
+          event_payload = '''${{ github.event.client_payload }}'''
           payload = json.loads(event_payload) if event_payload and event_payload.strip() else {}
 
           message = payload.get('message', {})
