@@ -18,6 +18,9 @@ jobs:
   a2a-agent:
     runs-on: ubuntu-latest
     name: A2A Agent Handler
+    permissions:
+      contents: write
+      pull-requests: write
 
     env:
       A2A_ENDPOINT: ${{ secrets.A2A_ENDPOINT }}
