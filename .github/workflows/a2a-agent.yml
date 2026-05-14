@@ -1,32 +1,41 @@
 name: A2A Agent
+
 on:
   repository_dispatch:
     types: [a2a-message]
+
   schedule:
     - cron: '*/5 * * * *'
+
   workflow_dispatch:
     inputs:
       test_message:
         description: 'Send a test A2A message'
         required: false
         type: boolean
+
 jobs:
   a2a-agent:
     runs-on: ubuntu-latest
     name: A2A Agent Handler
+
     env:
       A2A_ENDPOINT: ${{ secrets.A2A_ENDPOINT }}
       A2A_AGENT_ID: ${{ secrets.A2A_AGENT_ID }}
       A2A_API_KEY: ${{ secrets.A2A_API_KEY }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install dependencies
         run: pip install httpx pyjwt cryptography
+
       - name: Handle A2A Message
         if: github.event_name == 'repository_dispatch'
         run: |
@@ -35,63 +44,63 @@ jobs:
           import json
           import httpx
           from datetime import datetime
-          print(f"DEBUG A2A_ENDPOINT='{os.environ.get('A2A_ENDPOINT', 'NOT_SET')}'")
+
           endpoint = os.environ.get('A2A_ENDPOINT', '')
           agent_id = os.environ.get('A2A_AGENT_ID', 'unknown')
           api_key = os.environ.get('A2A_API_KEY', '')
+
           event_payload = '''${{ github.event.payload }}'''
           payload = json.loads(event_payload) if event_payload and event_payload.strip() else {}
+
           message = payload.get('message', {})
-          message_type = message.get('message_type', '')
           sender_id = message.get('sender_id', 'unknown')
           correlation_id = message.get('correlation_id', '')
+          message_type = message.get('message_type', '')
+          task_payload = message.get('payload', {})
+
           print(f'Received {message_type} from {sender_id}, correlation_id={correlation_id}')
+
+          result_output = ""
           if message_type == 'TASK_REQUEST':
-              result = os.popen('python agent_logic.py').read()
-              response = {
-                  'sender_id': agent_id,
-                  'receiver_id': sender_id,
-                  'message_type': 'TASK_RESPONSE',
-                  'payload': {'result': result},
-                  'correlation_id': correlation_id,
-                  'timestamp': datetime.utcnow().isoformat(),
-              }
-          elif message_type == 'HEARTBEAT':
+              task = task_payload.get('task', '')
+              print(f'Processing task: {task}')
+              import subprocess
+              try:
+                  proc = subprocess.run(
+                      ['python', 'agent_logic.py', task],
+                      capture_output=True, text=True, timeout=60
+                  )
+                  result_output = proc.stdout or proc.stderr or "No output"
+              except Exception as e:
+                  result_output = f"Error: {str(e)}"
+
               response = {
                   'sender_id': agent_id,
                   'receiver_id': sender_id,
                   'message_type': 'TASK_RESPONSE',
                   'payload': {
-                      'status': 'READY',
-                      'load': 0.3,
-                      'tools': ['code_generation', 'testing', 'review'],
+                      'original_task': task,
+                      'result': result_output,
+                      'status': 'completed'
                   },
                   'correlation_id': correlation_id,
                   'timestamp': datetime.utcnow().isoformat(),
+                  'version': '1.0',
               }
-          elif message_type == 'VALIDATION_SHARE':
-              print(f'Validation share: {message.get("payload", {})}')
-              response = {
-                  'sender_id': agent_id,
-                  'receiver_id': sender_id,
-                  'message_type': 'TASK_RESPONSE',
-                  'payload': {'received': True},
-                  'correlation_id': correlation_id,
-                  'timestamp': datetime.utcnow().isoformat(),
-              }
-          else:
-              print(f'Unhandled message type: {message_type}')
-              response = None
-          if response and message.get('receiver_id'):
-              with httpx.Client() as client:
-                  resp = client.post(
-                      f"{endpoint}/a2a/messages",
-                      json=response,
-                      headers={'Authorization': f"Bearer {api_key}"},
-                      timeout=10.0,
-                  )
-                  print(f'Response sent: {resp.status_code}')
+
+              try:
+                  with httpx.Client() as client:
+                      resp = client.post(
+                          f"{endpoint}/a2a/messages",
+                          json=response,
+                          headers={'Authorization': f"Bearer {api_key}"},
+                          timeout=30.0,
+                      )
+                      print(f'Response sent to {sender_id}: {resp.status_code}')
+              except Exception as e:
+                  print(f'Failed to send response: {e}')
           PYEOF
+
       - name: Send Heartbeat
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: |
@@ -99,9 +108,11 @@ jobs:
           import os
           import httpx
           from datetime import datetime
+
           endpoint = os.environ.get('A2A_ENDPOINT', '')
           agent_id = os.environ.get('A2A_AGENT_ID', 'unknown')
           api_key = os.environ.get('A2A_API_KEY', '')
+
           heartbeat = {
               'sender_id': agent_id,
               'receiver_id': None,
@@ -115,6 +126,7 @@ jobs:
               'correlation_id': '''${{ github.run_id }}''',
               'timestamp': datetime.utcnow().isoformat(),
           }
+
           with httpx.Client() as client:
               resp = client.post(
                   f"{endpoint}/a2a/channels/broadcast",
