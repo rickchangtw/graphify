@@ -1,27 +1,17 @@
 """A2A Agent Logic - Handles TASK_REQUEST messages for development tasks.
 
-Run as: python agent_logic.py "<task_json>"
-Or:    python agent_logic.py task_name arg1=val1 arg2=val2
-
-Supported tasks:
-  status          - Git status, last commit, branch info
-  code_review     - Review staged/committed changes
-  run_tests       - Run pytest tests (optional: module=TESTS_PATH)
-  lint            - Run ruff check on a module (optional: path=PATH)
-  file_tree       - Show project file structure
-  deps            - Show project dependencies
-  graph_info      - Query graphify knowledge graph
-  help            - List all tasks
+Run as: python agent_logic.py '{"task":"status"}'
+       python agent_logic.py '{"task":"code_generation","files":[{"path":"test.py","content":"..."}],"message":"Add test"}'
 """
 
 import json
 import os
 import subprocess
 import sys
-import textwrap
+import tempfile
 
 
-def run(cmd, timeout=30, cwd=None) -> dict:
+def run(cmd, timeout=60, cwd=None) -> dict:
     """Run a shell command and return output."""
     try:
         proc = subprocess.run(
@@ -29,8 +19,8 @@ def run(cmd, timeout=30, cwd=None) -> dict:
         )
         return {
             "exit_code": proc.returncode,
-            "stdout": proc.stdout.strip()[:5000],
-            "stderr": proc.stderr.strip()[:2000],
+            "stdout": proc.stdout.strip()[:10000],
+            "stderr": proc.stderr.strip()[:3000],
         }
     except FileNotFoundError:
         return {"exit_code": -1, "stdout": "", "stderr": f"Command not found: {cmd[0]}"}
@@ -40,7 +30,18 @@ def run(cmd, timeout=30, cwd=None) -> dict:
         return {"exit_code": -1, "stdout": "", "stderr": str(e)}
 
 
-# ── Task Handlers ──────────────────────────────────────────────────────
+def _gh_token() -> str:
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN", "")
+    if not token:
+        token = os.environ.get("INPUT_GITHUB_TOKEN", "")
+    return token
+
+
+def _repo_slug() -> str:
+    return os.environ.get("GITHUB_REPOSITORY", "rickchangtw/graphify")
+
+
+# ── Existing Handlers ──────────────────────────────────────────────────
 
 def handle_status(_) -> dict:
     result = run(["git", "status", "--short"])
@@ -60,115 +61,196 @@ def handle_code_review(payload: dict) -> dict:
     elif scope == "working":
         diff = run(["git", "diff"])
     elif scope == "commit":
-        ref = payload.get("ref", "HEAD~1..HEAD")
-        diff = run(["git", "diff", ref])
+        diff = run(["git", "diff", payload.get("ref", "HEAD~1..HEAD")])
     else:
         return {"error": f"Unknown scope: {scope}"}
-
     if not diff.get("stdout"):
         return {"review": "No changes to review."}
-
-    diff_text = diff["stdout"]
+    added = sum(1 for l in diff["stdout"].splitlines() if l.startswith("+") and not l.startswith("+++"))
+    removed = sum(1 for l in diff["stdout"].splitlines() if l.startswith("-") and not l.startswith("---"))
     stats = run(["git", "diff", "--stat"])
     changed_files = len(stats.get("stdout", "").splitlines())
-
-    # Count lines added/removed
-    added = sum(1 for l in diff_text.splitlines() if l.startswith("+") and not l.startswith("+++"))
-    removed = sum(1 for l in diff_text.splitlines() if l.startswith("-") and not l.startswith("---"))
-
-    # Estimate code quality flags
-    flags = []
-    for line in diff_text.splitlines():
-        stripped = line.lstrip("+-")
-        if "TODO" in stripped and line.startswith("+"):
-            flags.append("new TODO added")
-        if "print(" in stripped and line.startswith("+"):
-            flags.append("new print() statement")
-        if "import " in stripped and "os" in stripped and line.startswith("+"):
-            pass
-
-    return {
-        "scope": scope,
-        "changed_files": changed_files,
-        "lines_added": added,
-        "lines_removed": removed,
-        "diff_preview": diff_text[:2000],
-        "flags": list(set(flags)) if flags else None,
-    }
+    return {"changed_files": changed_files, "lines_added": added, "lines_removed": removed, "diff_preview": diff["stdout"][:3000]}
 
 
 def handle_run_tests(payload: dict) -> dict:
-    module = payload.get("module", "")
-    args = ["python", "-m", "pytest", "-v", "--tb=short", "-x"]
-    if module:
-        args.append(module)
-    else:
-        args.append("tests/")
-    test_result = run(args, timeout=120)
-    passed = test_result["stdout"].count("PASSED") if test_result["exit_code"] == 0 else 0
-    failed = test_result["stdout"].count("FAILED")
-    return {
-        "exit_code": test_result["exit_code"],
-        "passed": passed,
-        "failed": failed,
-        "output": test_result["stdout"][:2000] or test_result["stderr"][:2000],
-    }
+    module = payload.get("module", "tests/")
+    r = run(["python", "-m", "pytest", "-v", "--tb=short", "-x", module], timeout=180)
+    passed = r["stdout"].count("PASSED")
+    failed = r["stdout"].count("FAILED")
+    return {"exit_code": r["exit_code"], "passed": passed, "failed": failed, "output": (r["stdout"] or r["stderr"])[:3000]}
 
 
 def handle_lint(payload: dict) -> dict:
     path = payload.get("path", ".")
-    result = run(["python", "-m", "ruff", "check", "--quiet", path], timeout=30)
-    return {
-        "path": path,
-        "issues": result["stdout"][:3000],
-        "error_count": len(result["stdout"].splitlines()),
-    }
+    r = run(["python", "-m", "ruff", "check", "--quiet", path], timeout=60)
+    return {"path": path, "issues": r["stdout"][:5000], "error_count": len(r["stdout"].splitlines())}
 
 
 def handle_file_tree(_) -> dict:
-    result = run(["find", ".", "-not", "-path", "./.*", "-not", "-path", "./__pycache__/*",
-                   "-not", "-path", "./*.egg-info/*", "-not", "-name", "*.pyc",
-                   "-not", "-path", "./.venv/*", "-not", "-path", "./node_modules/*",
-                   "-not", "-path", "./.git/*", "-maxdepth", 3])
-    lines = result["stdout"].splitlines()
-    return {"tree": lines[:80], "total_entries": len(lines)}
+    r = run(["find", ".", "-not", "-path", "./.*", "-not", "-path", "./__pycache__/*",
+             "-not", "-path", "./*.egg-info/*", "-not", "-name", "*.pyc",
+             "-not", "-path", "./.venv/*", "-not", "-path", "./node_modules/*",
+             "-not", "-path", "./.git/*", "-maxdepth", 3])
+    return {"tree": r["stdout"].splitlines()[:80]}
 
 
 def handle_deps(_) -> dict:
     if os.path.exists("pyproject.toml"):
         with open("pyproject.toml") as f:
             content = f.read()
-        deps = []
-        in_deps = False
+        deps, in_deps = [], False
         for line in content.splitlines():
             if "dependencies" in line and "=" in line:
                 in_deps = True
                 continue
             if in_deps:
-                stripped = line.strip().rstrip(",")
-                if stripped and not stripped.startswith("["):
-                    deps.append(stripped)
-                if stripped.startswith("["):
+                s = line.strip().rstrip(",")
+                if s and not s.startswith("["):
+                    deps.append(s.strip("\"'[]"))
+                if s.startswith("["):
                     break
-        deps = [d.strip("\"[]") for d in deps]
         return {"dependency_count": len(deps), "dependencies": deps, "file": "pyproject.toml"}
     elif os.path.exists("requirements.txt"):
         with open("requirements.txt") as f:
-            lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
-        return {"dependencies": lines[:50], "file": "requirements.txt"}
-    return {"dependencies": [], "note": "No dependency file found"}
+            deps = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+        return {"dependencies": deps[:50], "file": "requirements.txt"}
+    return {"error": "No dependency file found"}
 
 
-def handle_graph_info(_) -> dict:
-    graph_dir = "graphify"
-    if not os.path.isdir(graph_dir):
-        return {"error": "graphify directory not found"}
-    files = run(["find", graph_dir, "-name", "*.py"])
-    stats = run(["wc", "-l"] + files["stdout"].splitlines()[:20]) if files["stdout"] else {"stdout": "0"}
+# ── New: code_generation ───────────────────────────────────────────────
+
+def handle_code_generation(payload: dict) -> dict:
+    files = payload.get("files", [])
+    commit_message = payload.get("message", "feat: auto-generated code")
+    branch_name = payload.get("branch", f"auto-gen-{os.urandom(4).hex()}")
+    if not files:
+        return {"error": "No files specified. Pass files=[{path, content}, ...]"}
+    token = _gh_token()
+    if not token:
+        return {"error": "GITHUB_TOKEN not available"}
+    errors = []
+    for f in files:
+        fpath = f.get("path", "")
+        content = f.get("content", "")
+        if not fpath:
+            errors.append("Missing path in file entry")
+            continue
+        os.makedirs(os.path.dirname(fpath) or ".", exist_ok=True)
+        try:
+            with open(fpath, "w") as fh:
+                fh.write(content)
+        except Exception as e:
+            errors.append(f"Failed to write {fpath}: {e}")
+    if errors:
+        return {"partial": True, "errors": errors, "files_written": len(files) - len(errors)}
+    r = run(["git", "checkout", "-b", branch_name])
+    run(["git", "add", "-A"])
+    r2 = run(["git", "commit", "-m", commit_message, "--allow-empty"])
+    if r2["exit_code"] != 0:
+        return {"error": f"Commit failed: {r2['stderr']}"}
+    push = run(["git", "push", "origin", branch_name], timeout=30)
+    if push["exit_code"] != 0:
+        return {"error": f"Push failed: {push['stderr']}"}
+    pr_title = payload.get("pr_title", commit_message)
+    pr_body = payload.get("pr_body", f"Auto-generated by A2A agent.\n\nFiles:\n" + "\n".join(f"- {f.get('path','?')}" for f in files))
+    pr = run(["gh", "pr", "create", "--title", pr_title, "--body", pr_body], timeout=30)
     return {
-        "modules": len(files["stdout"].splitlines()) if files["stdout"] else 0,
-        "source_files": files["stdout"].splitlines()[:20],
+        "success": True,
+        "branch": branch_name,
+        "files_written": len(files),
+        "commit": r2["stdout"],
+        "pr": pr["stdout"],
+        "errors": errors if errors else None,
     }
+
+
+# ── New: refactor ──────────────────────────────────────────────────────
+
+def handle_refactor(payload: dict) -> dict:
+    path = payload.get("path", ".")
+    if not os.path.exists(path):
+        return {"error": f"Path not found: {path}"}
+    findings = []
+    r = run(["python", "-m", "ruff", "check", "--select", "E,W,F,D", "--quiet", path], timeout=60)
+    ruff_findings = len(r["stdout"].splitlines()) if r["stdout"] else 0
+    if r["stdout"]:
+        findings.append({"tool": "ruff", "issues": ruff_findings, "details": r["stdout"][:3000]})
+    complexity = run(["python", "-m", "lizard", "--languages", "python", "--exclude", ".venv", path], timeout=60)
+    if complexity["exit_code"] == 0 and complexity["stdout"]:
+        findings.append({"tool": "lizard_complexity", "output": complexity["stdout"][:3000]})
+    else:
+        findings.append({"tool": "lizard_complexity", "error": "lizard not installed, install with: pip install lizard"})
+    unused = run(["python", "-m", "vulture", path, "--min-confidence", "80"], timeout=60)
+    if unused["exit_code"] == 0 and unused["stdout"]:
+        findings.append({"tool": "vulture_unused_code", "output": unused["stdout"][:3000]})
+    else:
+        findings.append({"tool": "vulture_unused_code", "error": "vulture not installed, install with: pip install vulture"})
+    return {"path": path, "total_findings": ruff_findings, "checks": findings}
+
+
+# ── New: auto_fix ──────────────────────────────────────────────────────
+
+def handle_auto_fix(payload: dict) -> dict:
+    path = payload.get("path", ".")
+    commit_message = payload.get("message", "style: auto-fix lint issues")
+    token = _gh_token()
+    if not token:
+        return {"error": "GITHUB_TOKEN not available"}
+    r = run(["python", "-m", "ruff", "check", "--fix", "--quiet", path], timeout=60)
+    fixed = r["exit_code"] == 0
+    remaining = r["stdout"].strip()
+    diff = run(["git", "diff", "--stat"])
+    has_changes = bool(diff.get("stdout"))
+    result = {
+        "fix_applied": r["exit_code"] == 0,
+        "ruff_exit_code": r["exit_code"],
+        "auto_fixable_issues": r["stderr"][:500] if r["stderr"] else "N/A",
+        "has_uncommitted_changes": has_changes,
+    }
+    if has_changes:
+        run(["git", "add", "-A"])
+        c = run(["git", "commit", "-m", commit_message, "--allow-empty"])
+        run(["git", "push"], timeout=30)
+        result["commit"] = c.get("stdout", "") or c.get("stderr", "")
+        result["diff_files"] = run(["git", "diff", "HEAD~1..HEAD", "--stat"]).get("stdout", "")
+    return result
+
+
+# ── New: security_scan ─────────────────────────────────────────────────
+
+def handle_security_scan(payload: dict) -> dict:
+    findings = []
+    deps_file = payload.get("file", "pyproject.toml")
+    # Check known vulnerable patterns in files
+    pattern_scan = run([
+        "grep", "-rn",
+        "--include=*.py",
+        "-E", "(eval|exec|pickle\\.loads|yaml\\.load\\()",
+        "."
+    ], timeout=30)
+    dangerous = []
+    for line in pattern_scan.get("stdout", "").splitlines():
+        if "test" not in line and "__pycache__" not in line:
+            dangerous.append(line[:200])
+    if dangerous:
+        findings.append({"type": "dangerous_call", "count": len(dangerous), "matches": dangerous[:10]})
+    # Install and run pip-audit
+    install = run(["pip", "install", "pip-audit", "-q"], timeout=30)
+    if install["exit_code"] == 0:
+        audit = run(["python", "-m", "pip_audit", "--desc"], timeout=60)
+        if audit["stdout"]:
+            findings.append({"type": "pip_audit", "output": audit["stdout"][:3000]})
+        else:
+            findings.append({"type": "pip_audit", "output": audit["stderr"][:1000] or "No vulnerabilities found"})
+    else:
+        findings.append({"type": "pip_audit", "error": "Failed to install pip-audit"})
+    # Check for known version issues in deps
+    if os.path.exists("requirements.txt"):
+        with open("requirements.txt") as f:
+            lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+        findings.append({"type": "dependency_list", "count": len(lines), "file": "requirements.txt"})
+    return {"findings": findings, "total_checks": len(findings)}
 
 
 def handle_help(_) -> dict:
@@ -180,7 +262,10 @@ def handle_help(_) -> dict:
             "lint": "Run ruff check (path=src/)",
             "file_tree": "Show project file structure",
             "deps": "Show project dependencies",
-            "graph_info": "Show graphify module info",
+            "code_generation": "Generate code files and open a PR",
+            "refactor": "Analyze code for complexity/style/unused issues (path=PATH)",
+            "auto_fix": "Run ruff --fix and commit changes (path=PATH)",
+            "security_scan": "Scan for dependency vulnerabilities and dangerous patterns",
             "help": "List all available tasks",
         }
     }
@@ -193,20 +278,22 @@ TASK_HANDLERS = {
     "lint": handle_lint,
     "file_tree": handle_file_tree,
     "deps": handle_deps,
-    "graph_info": handle_graph_info,
+    "code_generation": handle_code_generation,
+    "refactor": handle_refactor,
+    "auto_fix": handle_auto_fix,
+    "security_scan": handle_security_scan,
     "help": handle_help,
 }
 
 
 def parse_args(args: list[str]) -> tuple[str, dict]:
-    """Parse CLI args into (task_name, payload_dict)."""
     if not args:
         return "help", {}
     first = args[0]
     if first.startswith("{"):
         try:
             data = json.loads(first)
-            return data.get("task", "help"), data.get("payload", {})
+            return data.get("task", "help"), {k: v for k, v in data.items() if k != "task"}
         except json.JSONDecodeError:
             return "help", {"error": "Invalid JSON"}
     task_name = first
