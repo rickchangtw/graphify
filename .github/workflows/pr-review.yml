@@ -1,0 +1,144 @@
+name: PR Review Pipeline
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    name: Pre-Commit (review → lint → test → scan)
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install ruff pytest httpx pyjwt cryptography
+          pip install -e . -q 2>/dev/null || true
+
+      - name: 🔍 Code Review — git diff stats
+        id: review
+        run: |
+          echo "### 🔍 Code Review" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          CHANGED=$(git diff --name-only HEAD~1..HEAD 2>/dev/null || git diff --name-only origin/main..HEAD 2>/dev/null || echo "unknown")
+          FILES=$(echo "$CHANGED" | wc -l)
+          ADDED=$(git diff --numstat HEAD~1..HEAD 2>/dev/null | awk '{s+=$1} END {print s+0}' || echo 0)
+          REMOVED=$(git diff --numstat HEAD~1..HEAD 2>/dev/null | awk '{s+=$2} END {print s+0}' || echo 0)
+          echo "**Files changed:** $FILES" >> $GITHUB_STEP_SUMMARY
+          echo "**Lines added:** $ADDED" >> $GITHUB_STEP_SUMMARY
+          echo "**Lines removed:** $REMOVED" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          git diff --stat HEAD~1..HEAD 2>/dev/null >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          REVIEW_PASS=true
+          echo "review_pass=$REVIEW_PASS" >> $GITHUB_OUTPUT
+
+      - name: 🔧 Lint — ruff check
+        id: lint
+        continue-on-error: true
+        run: |
+          echo "### 🔧 Lint" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if python -m ruff check --quiet . 2>/dev/null; then
+            echo "✅ No issues found" >> $GITHUB_STEP_SUMMARY
+            echo "lint_pass=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Issues found:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            python -m ruff check . 2>&1 | head -50 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "lint_pass=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 🧪 Tests — pytest
+        id: test
+        continue-on-error: true
+        run: |
+          echo "### 🧪 Tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          python -m pytest -v --tb=short -x tests/ 2>&1 | tail -50 > /tmp/pytest_output.txt
+          PY_EXIT=${PIPESTATUS[0]}
+          if [ "$PY_EXIT" -eq 0 ]; then
+            echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "test_pass=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Tests failed (exit code: $PY_EXIT)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat /tmp/pytest_output.txt | head -30 >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "test_pass=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 🛡️ Security — basic scan
+        id: security
+        continue-on-error: true
+        run: |
+          echo "### 🛡️ Security Scan" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          ISSUES=$(grep -rn --include="*.py" -E "(eval|exec|pickle\.loads|yaml\.load\()" . 2>/dev/null | grep -v test | grep -v __pycache__ | head -20 || true)
+          if [ -z "$ISSUES" ]; then
+            echo "✅ No dangerous patterns found" >> $GITHUB_STEP_SUMMARY
+            echo "security_pass=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Potentially dangerous patterns:" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "$ISSUES" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "security_pass=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 📋 Post PR Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const summary = process.env.GITHUB_STEP_SUMMARY
+              ? require('fs').readFileSync(process.env.GITHUB_STEP_SUMMARY, 'utf8')
+              : '';
+            const review = '${{ steps.review.outputs.review_pass }}' === 'true';
+            const lint = '${{ steps.lint.outputs.lint_pass }}' === 'true';
+            const test = '${{ steps.test.outputs.test_pass }}' === 'true';
+            const security = '${{ steps.security.outputs.security_pass }}' === 'true';
+            const allPass = review && lint && test && security;
+
+            let comment = '## 🤖 PR Review Pipeline\n\n';
+            comment += `| Step | Status |\n`;
+            comment += `|------|--------|\n`;
+            comment += `| 🔍 Review | ${review ? '✅' : '❌'} |\n`;
+            comment += `| 🔧 Lint | ${lint ? '✅' : '❌'} |\n`;
+            comment += `| 🧪 Tests | ${test ? '✅' : '❌'} |\n`;
+            comment += `| 🛡️ Security | ${security ? '✅' : '❌'} |\n`;
+            comment += `\n**Overall: ${allPass ? '✅ Passed' : '❌ Failed'}**\n`;
+            comment += `\n<details><summary>Full Output</summary>\n\n${summary}\n\n</details>\n`;
+            comment += `\n---\n*Run: ${{ github.run_id }}*`;
+
+            const { data: existing } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const botComment = existing.find(c => c.user.type === 'Bot' && c.body.includes('PR Review Pipeline'));
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: botComment.id, body: comment,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body: comment,
+              });
+            }
+            core.setOutput('conclusion', allPass ? 'success' : 'failure');
